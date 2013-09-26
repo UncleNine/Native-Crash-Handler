@@ -2,6 +2,17 @@
 
 A simple set of code to enable JNI Native crashes to be caught by java and throw a meaningfull exception
 
+## Forked project
+
+This code is based on project https://github.com/SalomonBrys/Native-Crash-Handler
+
+## What is new in this fork?
+
+Originally, there was no stacktrace for JNI programs, it was disabled. Native Crash Handler uses libcorkscrew.so library, which is available on Android >= 4.1.1 (API  devices.
+) 
+
+Main purpose of this fork: To add libcorkscrew.so library for devices with Android API 9 devices (2.3) to be able to generate native stack traces.
+This repository contains demo Android application to show how it works.
 
 ## Why it exists
 
