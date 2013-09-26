@@ -23,6 +23,11 @@
 #include <elf.h>
 #include <cutils/log.h>
 
+// In new elf.h, this constant is not defined
+// thus we are using the old one. This workaround is not tested...
+#ifndef PT_GNU_EH_FRAME
+#define PT_GNU_EH_FRAME         0x6474e550
+#endif
 
 static void load_eh_frame_hdr(pid_t pid, map_info_t* mi, uintptr_t *eh_frame_hdr) {
     uint32_t elf_phoff;

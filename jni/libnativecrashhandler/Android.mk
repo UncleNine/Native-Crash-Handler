@@ -1,4 +1,4 @@
-MODULE_PATH := $(call my-dir)/..
+MODULE_PATH := $(call my-dir)
 
 ###################
 # native crash handler  #

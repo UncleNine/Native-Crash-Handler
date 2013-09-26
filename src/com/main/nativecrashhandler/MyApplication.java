@@ -9,15 +9,29 @@ public class MyApplication extends Application {
     public static final String STD_LIB_NAME = "stlport_shared";
 	public static final String CRASH_NAME = "nativecrashhandler";
 	public static final String CORK_NAME = "localcorkscrew";
+	public static final String BROKEN_NAME = "broken";
 	
 	@Override
     public void onCreate() {
-        super.onCreate();
-
-        // The following line triggers the initialization of ACRA
-        Log.v(THIS_FILE, "Initializing crash report system");        
-        try {
+        super.onCreate();      
+        Log.e(THIS_FILE, "onCreated");
+        // At first load crash handler
+        loadCrashHandler();
+        
+        // Now load our broken lib
+        System.loadLibrary(BROKEN_NAME);
+        
+        // Everything is OK
+        Log.v(THIS_FILE, "Application started");
+    }
+	
+	/**
+	 * Loads crash handler native libraries
+	 */
+	public void loadCrashHandler(){
+		try {
             // Try to load the natives
+			// At first load STL port library.
         	Log.v(THIS_FILE, "Initializing native crash handler");
         	System.loadLibrary(STD_LIB_NAME);
         	
@@ -31,9 +45,11 @@ public class MyApplication extends Application {
         		Log.v(THIS_FILE, "Problem with loading local libcorcscrew");
         	}
         	
+        	// And finally load native part of crash handler
             System.loadLibrary(CRASH_NAME);
             Log.v(THIS_FILE, "Native crash libs just loaded");
             
+            // Register for native crash handler
             new NativeCrashHandler().registerForNativeCrash(this);
             Log.v(THIS_FILE, "Native crash handler initialized");
         } catch (UnsatisfiedLinkError e) {
@@ -42,10 +58,7 @@ public class MyApplication extends Application {
         } catch (Exception e) {
             Log.e(THIS_FILE, "We have a problem with the current stack....", e);
         }
-        
-        // everything is OK
-        Log.v(THIS_FILE, "Application started");
-    }
+	}
 	
 	public static boolean isCompatible(int apiLevel) {
         return android.os.Build.VERSION.SDK_INT >= apiLevel;
