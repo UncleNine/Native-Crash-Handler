@@ -8,6 +8,8 @@
 extern "C" {
 #endif
 
+JNIEXPORT jint JNI_OnLoad(JavaVM *vm, void *reserved) ;
+
 void nativeCrashHandler_onLoad(JavaVM* jvm);
 
 void makeNativeCrashReport(const char *reason);

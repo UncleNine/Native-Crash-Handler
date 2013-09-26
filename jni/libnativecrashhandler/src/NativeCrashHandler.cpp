@@ -138,6 +138,7 @@ void nativeCrashHandler_sigaction(int signal, struct siginfo *siginfo, void *sig
 }
 
 JNIEXPORT jboolean JNICALL Java_com_github_nativehandler_NativeCrashHandler_nRegisterForNativeCrash(JNIEnv * env, jobject obj) {
+//bool nRegisterForNativeCrash(JNIEnv * env, jobject obj) {
 
 	if (applicationClass) {
 		applicationObject = (jobject)env->NewGlobalRef(obj);
@@ -149,6 +150,7 @@ JNIEXPORT jboolean JNICALL Java_com_github_nativehandler_NativeCrashHandler_nReg
 }
 
 JNIEXPORT void JNICALL Java_com_github_nativehandler_NativeCrashHandler_nUnregisterForNativeCrash(JNIEnv *env, jobject) {
+//void nUnregisterForNativeCrash(JNIEnv *env, jobject) {
 	if (applicationObject) {
 		env->DeleteGlobalRef(applicationObject);
 	}
@@ -177,14 +179,23 @@ void nativeCrashHandler_onLoad(JavaVM *jvm) {
 
 	Verify(env->ExceptionCheck() == JNI_FALSE, "Java threw an exception");
 
-//	void * libcorkscrew = dlopen("libcorkscrew.so", RTLD_LAZY | RTLD_LOCAL);
-//	if (libcorkscrew) {
-//		unwind_backtrace_signal_arch = (t_unwind_backtrace_signal_arch) dlsym(libcorkscrew, "unwind_backtrace_signal_arch");
-//		acquire_my_map_info_list = (t_acquire_my_map_info_list) dlsym(libcorkscrew, "acquire_my_map_info_list");
-//		release_my_map_info_list = (t_release_my_map_info_list) dlsym(libcorkscrew, "release_my_map_info_list");
-//		get_backtrace_symbols  = (t_get_backtrace_symbols) dlsym(libcorkscrew, "get_backtrace_symbols");
-//		free_backtrace_symbols = (t_free_backtrace_symbols) dlsym(libcorkscrew, "free_backtrace_symbols");
-//	}
+	void * libcorkscrew = dlopen("libcorkscrew.so", RTLD_LAZY | RTLD_LOCAL);
+	if (libcorkscrew == NULL){
+		__android_log_print(ANDROID_LOG_DEBUG, "NativeCrashHandler", "Native libcorkscrew not found, try to load local");
+		libcorkscrew = dlopen("liblocalcorkscrew.so", RTLD_LAZY | RTLD_LOCAL);
+		if (libcorkscrew == NULL){
+			__android_log_print(ANDROID_LOG_DEBUG, "NativeCrashHandler", "Local libcorkscrew not found");
+		}
+	}
+
+	if (libcorkscrew) {
+		unwind_backtrace_signal_arch = (t_unwind_backtrace_signal_arch) dlsym(libcorkscrew, "unwind_backtrace_signal_arch");
+		acquire_my_map_info_list = (t_acquire_my_map_info_list) dlsym(libcorkscrew, "acquire_my_map_info_list");
+		release_my_map_info_list = (t_release_my_map_info_list) dlsym(libcorkscrew, "release_my_map_info_list");
+		get_backtrace_symbols  = (t_get_backtrace_symbols) dlsym(libcorkscrew, "get_backtrace_symbols");
+		free_backtrace_symbols = (t_free_backtrace_symbols) dlsym(libcorkscrew, "free_backtrace_symbols");
+		__android_log_print(ANDROID_LOG_DEBUG, "NativeCrashHandler", "libcorkscrew loaded");
+	}
 
 	struct sigaction handler;
 	memset(&handler, 0, sizeof(handler));
@@ -221,6 +232,11 @@ void nativeCrashHandler_onLoad(JavaVM *jvm) {
 
 	result = sigaction(SIGPIPE,   &handler, &old_sa[SIGPIPE]   );
 	Verify(!result, "Could not register signal callback for SIGPIPE");
+}
+
+JNIEXPORT jint JNI_OnLoad(JavaVM *vm, void *reserved) {
+	nativeCrashHandler_onLoad(vm);
+	return JNI_VERSION_1_4;
 }
 
 }
