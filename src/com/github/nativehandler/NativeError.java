@@ -11,6 +11,10 @@ public class NativeError extends Error {
 		super(reason + " in thread " + threadID);
 	}
 	
+	public NativeError(String reason, String debugPC, int threadID) {
+		super(reason + " in thread " + threadID + "\n" + debugPC);
+	}
+	
 	@Override
 	public Throwable fillInStackTrace() {
 		super.fillInStackTrace();

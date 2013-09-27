@@ -8,10 +8,13 @@ public class NativeCrashHandler {
 	Context ctx;
 	
 	private void makeCrashReport(String reason, StackTraceElement[] stack, int threadID) {
-		
+		makeCrashReport(reason, "", stack, threadID);
+	}
+	
+	private void makeCrashReport(String reason, String debugPCTrace, StackTraceElement[] stack, int threadID) {
 		if (stack != null)
 			NativeError.natSt = stack;
-		NativeError e = new NativeError(reason, threadID);
+		NativeError e = debugPCTrace==null || debugPCTrace.length() == 0 ? new NativeError(reason, threadID) : new NativeError(reason, debugPCTrace, threadID);
 		Intent intent = new Intent(ctx, NativeCrashActivity.class);
 		intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
 		intent.putExtra("error", e);

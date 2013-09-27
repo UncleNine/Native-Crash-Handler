@@ -4,6 +4,7 @@
 #include <jni.h>
 #include <android/log.h>
 
+#include <stdio.h>
 #include <unistd.h>
 #include <signal.h>
 #include <string.h>
@@ -19,6 +20,7 @@
 #define Verify(x, r)  ((void)(x))
 #endif
 
+#define NATIVE_DUMP_LOG 1
 
 extern "C" {
 
@@ -26,6 +28,7 @@ static struct sigaction old_sa[NSIG];
 
 static jclass applicationClass = 0;
 static jmethodID makeCrashReportMethod;
+static jmethodID makeCrashReportDebugMethod;
 static jobject applicationObject = 0;
 
 static jclass stackTraceElementClass = 0;
@@ -60,6 +63,15 @@ static t_free_backtrace_symbols free_backtrace_symbols;
 typedef void (*t_format_backtrace_line)(unsigned frameNumber, const backtrace_frame_t* frame, const backtrace_symbol_t* symbol, char* buffer, size_t bufferSize);
 static t_format_backtrace_line format_backtrace_line;
 
+#define ACCUM_MAXLEN 4095
+#define APPEND_ACCUMULATOR(acc, maxlen, curlen, toapp) { 		\
+		if (toapp!=NULL && acc!=NULL && maxlen > curlen){		\
+			unsigned int tmpAccAppendLen = strlen(toapp);		\
+			strncat((char*)acc, toapp, maxlen-curlen);					\
+			curlen += tmpAccAppendLen > (maxlen-curlen) ? maxlen-curlen : tmpAccAppendLen;	\
+		}														\
+}
+
 void _makeNativeCrashReport(const char *reason, struct siginfo *siginfo, void *sigcontext) {
 	JNIEnv *env = 0;
 
@@ -78,16 +90,25 @@ void _makeNativeCrashReport(const char *reason, struct siginfo *siginfo, void *s
 		);
 	else if (env && applicationObject) {
 		jobjectArray elements = NULL;
+		char acc[ACCUM_MAXLEN+1] = {0,};
+		unsigned long int accLen;
 
 		if (unwind_backtrace_signal_arch != NULL && siginfo != NULL)  {
 			map_info_t *map_info = acquire_my_map_info_list();
 			backtrace_frame_t frames[256] = {0,};
 			backtrace_symbol_t symbols[256] = {0,};
-#ifdef NATIVE_DUMP_LOG
+
 			char linebuff[512] = {0,};
-#endif
 			const ssize_t size = unwind_backtrace_signal_arch(siginfo, sigcontext, map_info, frames, 1, 255);
 			get_backtrace_symbols(frames,  size, symbols);
+
+			// simulate crashdump to logcat
+			snprintf((char*)&linebuff, 512, "pid: %d, tid: %d  >>> nativecrashhandler <<<", getpid(), gettid());
+			APPEND_ACCUMULATOR(&acc, ACCUM_MAXLEN, accLen, "*** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***\n");
+			APPEND_ACCUMULATOR(&acc, ACCUM_MAXLEN, accLen, linebuff);
+			APPEND_ACCUMULATOR(&acc, ACCUM_MAXLEN, accLen, "\n");
+			__android_log_print(ANDROID_LOG_ERROR, "NativeDump", "*** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***");
+			__android_log_print(ANDROID_LOG_ERROR, "NativeDump", linebuff);
 
 			elements = env->NewObjectArray(size, stackTraceElementClass, NULL);
 			Verify(elements, "Could not create StackElement java array");
@@ -100,16 +121,18 @@ void _makeNativeCrashReport(const char *reason, struct siginfo *siginfo, void *s
 				if (!method)
 					method = "?";
 				//__android_log_print(ANDROID_LOG_ERROR, "XXXDUMP", "[%s] [%s] [%s] [%p]", method, symbols[i].symbol_name, symbols[i].map_name, symbols[i].relative_pc);
-#ifdef NATIVE_DUMP_LOG
+
 				format_backtrace_line(i, &(frames[i]), &(symbols[i]), (char*) &linebuff, 512);
 				__android_log_print(ANDROID_LOG_ERROR, "NativeDump", "%s", linebuff);
-#endif
+				APPEND_ACCUMULATOR(&acc, ACCUM_MAXLEN, accLen, linebuff);
+				APPEND_ACCUMULATOR(&acc, ACCUM_MAXLEN, accLen, "\n");
+
 				const char *file = symbols[i].map_name;
 				if (!file)
 					file = "-";
 				jobject element = env->NewObject(stackTraceElementClass, stackTraceElementMethod,
 						jni,
-						env->NewStringUTF(method),
+						env->NewStringUTF(linebuff),
 						env->NewStringUTF(file),
 						-2 //symbols[i].relative_pc
 				);
@@ -118,11 +141,13 @@ void _makeNativeCrashReport(const char *reason, struct siginfo *siginfo, void *s
 				Verify(env->ExceptionCheck() == JNI_FALSE, "Java threw an exception");
 			}
 
+			APPEND_ACCUMULATOR(&acc, ACCUM_MAXLEN, accLen, "END-OF-DUMP");
+
 			free_backtrace_symbols(symbols, size);
 			release_my_map_info_list(map_info);
 		}
 
-		env->CallVoidMethod(applicationObject, makeCrashReportMethod, env->NewStringUTF(reason), elements, (jint)gettid());
+		env->CallVoidMethod(applicationObject, makeCrashReportDebugMethod, env->NewStringUTF(reason), env->NewStringUTF(acc), elements, (jint)gettid());
 		Verify(env->ExceptionCheck() == JNI_FALSE, "Java threw an exception");
 	}
 	else
@@ -174,6 +199,8 @@ void nativeCrashHandler_onLoad(JavaVM *jvm) {
 	Verify(applicationClass, "Could not create NativeCrashHandler java class global reference");
 	makeCrashReportMethod = env->GetMethodID(applicationClass, "makeCrashReport", "(Ljava/lang/String;[Ljava/lang/StackTraceElement;I)V");
 	Verify(makeCrashReportMethod, "Could not find makeCrashReport java method");
+	makeCrashReportDebugMethod = env->GetMethodID(applicationClass, "makeCrashReport", "(Ljava/lang/String;Ljava/lang/String;[Ljava/lang/StackTraceElement;I)V");
+	Verify(makeCrashReportDebugMethod, "Could not find makeCrashReport java method");
 
 	stackTraceElementClass = env->FindClass("java/lang/StackTraceElement");
 	Verify(stackTraceElementClass, "Could not find StackTraceElement java class");
@@ -211,7 +238,7 @@ void nativeCrashHandler_onLoad(JavaVM *jvm) {
 
 	stack_t stack;
 	memset(&stack, 0, sizeof(stack));
-	stack.ss_size = 1024 * 128;
+	stack.ss_size = 1024 * 256;
 	stack.ss_sp = malloc(stack.ss_size);
 	Verify(stack.ss_sp, "Could not allocate signal alternative stack");
 	stack.ss_flags = 0;
