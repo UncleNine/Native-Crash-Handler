@@ -57,7 +57,8 @@ typedef void (*t_get_backtrace_symbols)(const backtrace_frame_t* backtrace, size
 static t_get_backtrace_symbols get_backtrace_symbols;
 typedef void (*t_free_backtrace_symbols)(backtrace_symbol_t* symbols, size_t frames);
 static t_free_backtrace_symbols free_backtrace_symbols;
-
+typedef void (*t_format_backtrace_line)(unsigned frameNumber, const backtrace_frame_t* frame, const backtrace_symbol_t* symbol, char* buffer, size_t bufferSize);
+static t_format_backtrace_line format_backtrace_line;
 
 void _makeNativeCrashReport(const char *reason, struct siginfo *siginfo, void *sigcontext) {
 	JNIEnv *env = 0;
@@ -82,6 +83,9 @@ void _makeNativeCrashReport(const char *reason, struct siginfo *siginfo, void *s
 			map_info_t *map_info = acquire_my_map_info_list();
 			backtrace_frame_t frames[256] = {0,};
 			backtrace_symbol_t symbols[256] = {0,};
+#ifdef NATIVE_DUMP_LOG
+			char linebuff[512] = {0,};
+#endif
 			const ssize_t size = unwind_backtrace_signal_arch(siginfo, sigcontext, map_info, frames, 1, 255);
 			get_backtrace_symbols(frames,  size, symbols);
 
@@ -95,7 +99,11 @@ void _makeNativeCrashReport(const char *reason, struct siginfo *siginfo, void *s
 					method = symbols[i].symbol_name;
 				if (!method)
 					method = "?";
-				//__android_log_print(ANDROID_LOG_ERROR, "DUMP", "%s", method);
+				//__android_log_print(ANDROID_LOG_ERROR, "XXXDUMP", "[%s] [%s] [%s] [%p]", method, symbols[i].symbol_name, symbols[i].map_name, symbols[i].relative_pc);
+#ifdef NATIVE_DUMP_LOG
+				format_backtrace_line(i, &(frames[i]), &(symbols[i]), (char*) &linebuff, 512);
+				__android_log_print(ANDROID_LOG_ERROR, "NativeDump", "%s", linebuff);
+#endif
 				const char *file = symbols[i].map_name;
 				if (!file)
 					file = "-";
@@ -103,7 +111,7 @@ void _makeNativeCrashReport(const char *reason, struct siginfo *siginfo, void *s
 						jni,
 						env->NewStringUTF(method),
 						env->NewStringUTF(file),
-						-2
+						-2 //symbols[i].relative_pc
 				);
 				Verify(element, "Could not create StackElement java object");
 				env->SetObjectArrayElement(elements, pos++, element);
@@ -138,8 +146,6 @@ void nativeCrashHandler_sigaction(int signal, struct siginfo *siginfo, void *sig
 }
 
 JNIEXPORT jboolean JNICALL Java_com_github_nativehandler_NativeCrashHandler_nRegisterForNativeCrash(JNIEnv * env, jobject obj) {
-//bool nRegisterForNativeCrash(JNIEnv * env, jobject obj) {
-
 	if (applicationClass) {
 		applicationObject = (jobject)env->NewGlobalRef(obj);
 		Verify(applicationObject, "Could not create NativeCrashHandler java object global reference");
@@ -150,7 +156,6 @@ JNIEXPORT jboolean JNICALL Java_com_github_nativehandler_NativeCrashHandler_nReg
 }
 
 JNIEXPORT void JNICALL Java_com_github_nativehandler_NativeCrashHandler_nUnregisterForNativeCrash(JNIEnv *env, jobject) {
-//void nUnregisterForNativeCrash(JNIEnv *env, jobject) {
 	if (applicationObject) {
 		env->DeleteGlobalRef(applicationObject);
 	}
@@ -194,6 +199,7 @@ void nativeCrashHandler_onLoad(JavaVM *jvm) {
 		release_my_map_info_list = (t_release_my_map_info_list) dlsym(libcorkscrew, "release_my_map_info_list");
 		get_backtrace_symbols  = (t_get_backtrace_symbols) dlsym(libcorkscrew, "get_backtrace_symbols");
 		free_backtrace_symbols = (t_free_backtrace_symbols) dlsym(libcorkscrew, "free_backtrace_symbols");
+		format_backtrace_line = (t_format_backtrace_line) dlsym(libcorkscrew, "format_backtrace_line");
 		__android_log_print(ANDROID_LOG_DEBUG, "NativeCrashHandler", "libcorkscrew loaded");
 	}
 
